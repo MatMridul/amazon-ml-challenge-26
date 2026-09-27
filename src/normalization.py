@@ -187,6 +187,67 @@ def get_character_ngrams(text: str, n: int = 3) -> Set[str]:
     return {compact[i:i+n] for i in range(len(compact) - n + 1)}
 
 
+DUMMY_NUMS = {"0000000000", "1111111111", "9999999999", "1234567890", "0123456789", "9876543210"}
+PHONE_REGEX = re.compile(r'(?:\+?91[\s-]?)?([6-9]\d{9})\b|\b(\d{3}[-.\s]\d{3}[-.\s]\d{4})\b')
+GSTIN_REGEX = re.compile(r'\b([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})\b')
+CIN_REGEX = re.compile(r'\b([LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6})\b')
+SIREN_REGEX = re.compile(r'\b([0-9]{9})\b')
+STOP_WORDS_2G = {"the", "and", "of", "for", "in", "at", "to", "on", "by", "with", "a", "an", "de", "la", "le", "et", "du", "des"}
+
+
+def extract_identifiers(text: Optional[str], country: str = "India") -> Tuple[Set[str], Set[str]]:
+    """
+    Extracts high-confidence structured identifiers from free text:
+    Returns (phones, corporate_ids)
+    """
+    if not text:
+        return set(), set()
+    text_upper = text.upper()
+    phones = set()
+    corp_ids = set()
+
+    # Phones
+    for match in PHONE_REGEX.finditer(text):
+        m = match.group(1) or match.group(2)
+        if m:
+            clean_digits = re.sub(r"\D", "", m)
+            if len(clean_digits) == 10 and clean_digits not in DUMMY_NUMS:
+                phones.add(clean_digits)
+
+    # Corporate IDs
+    if country == "India":
+        for match in GSTIN_REGEX.finditer(text_upper):
+            corp_ids.add(match.group(1))
+        for match in CIN_REGEX.finditer(text_upper):
+            corp_ids.add(match.group(1))
+    elif country == "France":
+        for match in SIREN_REGEX.finditer(text):
+            digits = match.group(1)
+            if digits not in DUMMY_NUMS and not digits.startswith("00"):
+                corp_ids.add(digits)
+
+    return phones, corp_ids
+
+
+def extract_name_2grams(core_name: str) -> List[str]:
+    """
+    Extracts order-independent token pairs from core name:
+    e.g. 'hendricks flowers' -> ['flowers_hendricks']
+    """
+    if not core_name:
+        return []
+    tokens = [t for t in core_name.split() if len(t) >= 3 and t not in STOP_WORDS_2G]
+    if len(tokens) < 2:
+        return []
+    grams = []
+    tokens = tokens[:5]  # first 5 significant tokens
+    for i in range(len(tokens)):
+        for j in range(i + 1, len(tokens)):
+            pair = sorted([tokens[i], tokens[j]])
+            grams.append(f"{pair[0]}_{pair[1]}")
+    return grams
+
+
 if __name__ == "__main__":
     test_cases = [
         ("Orelee's Barbershop", "1795 Westchester Drive, High Point, NC 27262", "US"),

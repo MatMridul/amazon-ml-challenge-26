@@ -29,7 +29,9 @@ from src.normalization import (
     normalize_name,
     normalize_address,
     get_character_ngrams,
-    clean_text
+    clean_text,
+    extract_identifiers,
+    extract_name_2grams
 )
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
@@ -48,10 +50,13 @@ class LexicalBlocker:
         self.compact_name_index: Dict[str, List[str]] = defaultdict(list)
         self.rare_name_token_index: Dict[str, List[str]] = defaultdict(list)
         self.postal_first_token_index: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        self.name_2gram_index: Dict[str, List[str]] = defaultdict(list)
         
         # Address index tables
         self.exact_address_index: Dict[str, List[str]] = defaultdict(list)
         self.rare_addr_token_index: Dict[str, List[str]] = defaultdict(list)
+        self.phone_index: Dict[str, List[str]] = defaultdict(list)
+        self.corp_id_index: Dict[str, List[str]] = defaultdict(list)
         
         # Token frequency maps for rare-token filtering
         self.name_token_freq: Dict[str, int] = defaultdict(int)
@@ -135,14 +140,29 @@ class LexicalBlocker:
                 if len(atok) >= 4 and self.addr_token_freq.get(atok, 0) <= max_addr_token_freq:
                     self.rare_addr_token_index[atok].append(eid)
 
+            # 7. Name 2-grams index
+            for g in extract_name_2grams(core_name):
+                self.name_2gram_index[g].append(eid)
+
+            # 8. Phones & Corporate IDs
+            if addr:
+                phones, corp_ids = extract_identifiers(addr, self.country)
+                for p in phones:
+                    self.phone_index[p].append(eid)
+                for cid in corp_ids:
+                    self.corp_id_index[cid].append(eid)
+
             self.total_records += 1
 
         print(f"[{self.country}] Indexed {self.total_records:,} records successfully.")
         print(f"  Exact core names:    {len(self.exact_core_index):,} unique keys")
         print(f"  Compact names:       {len(self.compact_name_index):,} unique keys")
         print(f"  Rare name tokens:    {len(self.rare_name_token_index):,} unique keys")
+        print(f"  Name 2-grams:        {len(self.name_2gram_index):,} unique keys")
         print(f"  Exact addresses:     {len(self.exact_address_index):,} unique keys")
         print(f"  Rare address tokens: {len(self.rare_addr_token_index):,} unique keys")
+        print(f"  Phone numbers:       {len(self.phone_index):,} unique keys")
+        print(f"  Corporate IDs:       {len(self.corp_id_index):,} unique keys")
 
     def get_candidates(
         self,
@@ -158,7 +178,7 @@ class LexicalBlocker:
         
         Args:
             enabled_blockers: Optional set of blocker names to enable.
-                Options: {"exact_core", "compact_name", "rare_name_tokens", "exact_address", "rare_address_tokens", "postal_first_token"}
+                Options: {"exact_core", "compact_name", "rare_name_tokens", "name_2grams", "exact_address", "rare_address_tokens", "postal_first_token", "structured_ids"}
                 If None, all blockers are enabled.
         Returns:
             candidates: set of candidate IDs
@@ -169,9 +189,11 @@ class LexicalBlocker:
                 "exact_core",
                 "compact_name",
                 "rare_name_tokens",
+                "name_2grams",
                 "exact_address",
                 "rare_address_tokens",
-                "postal_first_token"
+                "postal_first_token",
+                "structured_ids"
             }
 
         norm_name, core_name, compact_name = normalize_name(name)
@@ -251,6 +273,29 @@ class LexicalBlocker:
             if 0 < len(p_matches) <= 100:
                 candidates.update(p_matches)
                 attribution["postal_first_token"].update(p_matches)
+
+        # 7. Name 2-Grams
+        if "name_2grams" in enabled_blockers and core_name:
+            for g in extract_name_2grams(core_name):
+                g_matches = self.name_2gram_index.get(g, [])
+                if 0 < len(g_matches) <= 60:
+                    top_g = g_matches[:20]
+                    candidates.update(top_g)
+                    attribution["name_2grams"].update(top_g)
+
+        # 8. Structured Identifiers (Phone & Corporate ID)
+        if "structured_ids" in enabled_blockers and addr:
+            q_phones, q_corps = extract_identifiers(addr, self.country)
+            for p in q_phones:
+                p_matches = self.phone_index.get(p, [])
+                if 0 < len(p_matches) <= 20:
+                    candidates.update(p_matches)
+                    attribution["exact_phone"].update(p_matches)
+            for cid in q_corps:
+                c_matches = self.corp_id_index.get(cid, [])
+                if 0 < len(c_matches) <= 10:
+                    candidates.update(c_matches)
+                    attribution["exact_corp_id"].update(c_matches)
 
         # Rank/truncate candidates if max_total_candidates is set
         if max_total_candidates and len(candidates) > max_total_candidates:

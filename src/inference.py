@@ -142,6 +142,8 @@ def run_inference(
                     rare_addr = 1 if cid in attribution.get("rare_address_tokens", set()) else 0
                     n_agree = sum(1 for b in attribution if cid in attribution[b])
 
+                    is_exact_id = 1 if (cid in attribution.get("exact_phone", set()) or cid in attribution.get("exact_corp_id", set())) else 0
+
                     batch_pair_rows.append({
                         "s1_id": s1_id,
                         "s1_name": s1_name,
@@ -154,6 +156,7 @@ def run_inference(
                         "is_rare_name": rare_name,
                         "is_exact_addr": exact_addr,
                         "is_rare_addr": rare_addr,
+                        "is_exact_id": is_exact_id,
                         "blocker_agreement_count": n_agree,
                         "label": 0  # Dummy for inference
                     })
@@ -175,13 +178,27 @@ def run_inference(
             preds = model.predict(X)
             print(f"[{country}] Scored pairs in {time.time() - t_pred:.1f}s.")
 
-            # D. Apply Decision Threshold
-            s1_preds = defaultdict(list)
+            # D. Apply Decision Threshold with Margin and ID Boost
+            s1_cand_scores = defaultdict(list)
             for row_dict, prob in zip(batch_pair_rows, preds):
                 s1_id = row_dict["s1_id"]
                 cand_id = row_dict["cand_id"]
-                if prob >= threshold:
-                    s1_preds[s1_id].append(cand_id)
+                if row_dict.get("is_exact_id", 0) == 1:
+                    prob = 1.0
+                s1_cand_scores[s1_id].append((cand_id, prob))
+
+            s1_preds = defaultdict(list)
+            for s1_id, scored_list in s1_cand_scores.items():
+                if not scored_list:
+                    continue
+                max_p = max(p for _, p in scored_list)
+                # Dynamic Thresholding: if top candidate is weak, treat as singleton!
+                if max_p < threshold:
+                    continue
+                # Keep candidates that are strong AND within 0.18 margin of max match
+                for cid, p in scored_list:
+                    if p >= threshold and p >= (max_p - 0.18):
+                        s1_preds[s1_id].append(cid)
 
             for row in batch_s1.iter_rows(named=True):
                 s1_id = row["entity_id"]
