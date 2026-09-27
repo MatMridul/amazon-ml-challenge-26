@@ -13,6 +13,7 @@ import os
 import sys
 import argparse
 from typing import Dict, List, Set, Tuple
+from collections import defaultdict
 import numpy as np
 import polars as pl
 import lightgbm as lgb
@@ -50,8 +51,15 @@ def train_and_evaluate_matcher(
     raw_pairs_df = pl.read_parquet(pairs_parquet_path)
     print(f"Loaded {len(raw_pairs_df):,} total pairs across {raw_pairs_df['s1_id'].n_unique():,} unique S1 entities.")
 
-    # 2. Compute pairwise features
-    feat_df = compute_pairwise_features(raw_pairs_df)
+    # 2. Compute pairwise features with caching
+    feat_cache_path = pairs_parquet_path.replace(".parquet", "_features.parquet")
+    if os.path.exists(feat_cache_path):
+        print(f"Loading cached features from: {feat_cache_path}")
+        feat_df = pl.read_parquet(feat_cache_path)
+    else:
+        feat_df = compute_pairwise_features(raw_pairs_df)
+        print(f"Saving computed features to cache: {feat_cache_path}")
+        feat_df.write_parquet(feat_cache_path)
 
     # Convert to pandas/numpy for LightGBM
     pdf = feat_df.to_pandas()

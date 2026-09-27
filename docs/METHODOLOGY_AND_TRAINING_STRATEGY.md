@@ -70,3 +70,38 @@ To maximize training effectiveness and avoid blind trial-and-error:
    - Model learns continuous probability scores $P \in [0.0, 1.0]$. The decision threshold $T^*$ is swept on held-out validation queries to maximize the exact competition macro formula, awarding full 1.0 credit to singletons.
 6. **Feature Checkpointing for Zero-Cost Flexibility:**
    - Intermediate candidate pairs (`train_pairs.parquet`) and feature matrices (`train_features.parquet`) are cached. Re-running hyperparameter tuning or threshold sweeps takes <30 seconds without re-indexing.
+
+---
+
+## 5. Phase 4, 5, 6 Empirical Results: LightGBM Matcher Baseline
+
+- **Training Dataset:** 123,610 pairs (9,867 positives, 113,743 hard negatives)
+- **Validation Dataset:** 30,431 pairs (2,441 positives, 27,990 hard negatives) across 986 held-out S1 entities (zero-leakage `GroupShuffleSplit`).
+- **GBDT Architecture:** LightGBM 299 trees with early stopping on validation binary logloss.
+
+### Feature Importance Ranking (Split Gain):
+1. `addr_token_jaccard` (356,970.31) — overwhelmingly the strongest differentiator.
+2. `num_jaccard` (60,617.01) — address/phone numeric token overlap.
+3. `addr_token_sort` (55,874.90) — fuzzy address similarity.
+4. `name_token_set` (36,547.76) — core business name token overlap.
+5. `name_token_sort` (30,248.44) — word-reordered name similarity.
+6. `core_jw` (29,603.06) — stripped legal suffix Jaro-Winkler.
+7. `addr_jw` (21,655.72) — address Jaro-Winkler.
+8. `name_jw` (15,488.48) — raw name Jaro-Winkler.
+9. `num_conflict` (12,357.12) — explicit mismatch in building/street numbers.
+
+### Macro $F_{0.5}$ Calibration Curve:
+| Decision Threshold $T$ | Held-out Macro $F_{0.5}$ | Macro Precision | Macro Recall | Singleton Accuracy |
+| :--- | :--- | :--- | :--- | :--- |
+| 0.30 | 0.9131 | 0.9210 | 0.9179 | 82.54% |
+| 0.40 | 0.9224 | 0.9330 | 0.9158 | 87.30% |
+| 0.50 | 0.9274 | 0.9413 | 0.9102 | 91.27% |
+| **0.60 (Optimal $T^*$)** | **0.9283** | **0.9460** | **0.8993** | **92.86%** |
+| 0.70 | 0.9253 | 0.9473 | 0.8862 | 94.44% |
+| 0.80 | 0.9118 | 0.9407 | 0.8575 | 96.03% |
+| 0.90 | 0.8802 | 0.9216 | 0.8010 | 99.21% |
+
+**Key Takeaways:**
+- The LightGBM model elevates the pipeline from candidate generation baseline ($F_{0.5} \approx 0.39$) to **$0.9283$ Macro $F_{0.5}$** on candidate matches!
+- Threshold $T^* = 0.60$ strikes the optimal balance between high precision (94.60%) and high recall (89.93%), preserving 92.86% accuracy on singletons.
+
