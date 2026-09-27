@@ -75,6 +75,16 @@ flowchart TD
 
 ---
 
+## 🏆 Official Leaderboard Submission History & Forensic Analysis
+
+| Attempt | Model / Pipeline Variant | Public Leaderboard Score (Macro $F_{0.5}$) | Key Architectural Strategy & Diagnostic Finding |
+| :---: | :--- | :---: | :--- |
+| **#1** | **V1 Baseline Matcher** | **`0.81558`** | **Initial Scored Benchmark (Rank ~4,219)**.<br/>Multi-pass blocking + 23D string/token/phonetic features + Group-isolated LightGBM GBDT with calibrated relative-margin thresholding ($P \ge P_{\max} - 0.18$) and building number anti-conflict rules. |
+| **#2** | **V2 Multi-Source Match Recovery** | **`0.771593`** | **Precision Penalty Analysis**.<br/>Recovered 659,975 candidate matches to close the $S_2 \leftrightarrow S_3$ asymmetry gap. However, relaxed address thresholds (`ajw >= 0.65` for `njw >= 0.95`) allowed commercial chain branches across different cities/zip codes to falsely merge. In Macro $F_{0.5}$, precision is penalized $2\times$ harder than recall, confirming the theoretical importance of high precision. |
+| **#3** | **V3 Stricter Anti-Leak Engine** | *Submitted at Cutoff (Evaluation Pending)* | **Targeted Precision Restoration & Snipe Attempt**.<br/>Forensic audit over V2 that surgically pruned **310,540 false merges**:<br/>• **19,361** Postal code conflicts (US Zip / India PIN mismatch)<br/>• **256,517** Street number conflicts ($S_1 \cap S_{\text{cand}} = \emptyset$)<br/>• **34,662** Weak address conflicts.<br/>Restored precision guardrails while keeping high-confidence core recoveries. |
+
+---
+
 ## 📂 Project Structure
 
 ```
