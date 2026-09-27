@@ -145,10 +145,10 @@ def run_inference(
                     batch_pair_rows.append({
                         "s1_id": s1_id,
                         "s1_name": s1_name,
-                        "s1_address": s1_addr,
+                        "s1_addr": s1_addr,
                         "cand_id": cid,
                         "cand_name": cand_name,
-                        "cand_address": cand_addr,
+                        "cand_addr": cand_addr,
                         "is_exact_core": exact_core,
                         "is_compact_name": compact_name,
                         "is_rare_name": rare_name,
