@@ -26,3 +26,8 @@ __MACOSX/
 # IDE
 .vscode/
 .idea/
+
+# AWS Credentials & Private Keys
+*.pem
+*_accessKeys.csv
+credentials.csv
