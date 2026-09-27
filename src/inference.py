@@ -102,7 +102,8 @@ def run_inference(
 
         # Build Inverted Index Blocker
         print(f"[{country}] Building Lexical Blocker inverted indices...")
-        blocker = LexicalBlocker(country_pool)
+        blocker = LexicalBlocker(country)
+        blocker.index_records(country_pool)
         print(f"[{country}] Inverted index built in {time.time() - t_c:.1f}s.")
 
         # Process S1 queries in streaming batches
@@ -114,39 +115,46 @@ def run_inference(
 
             # A. Generate candidates for batch
             batch_pair_rows = []
-            s1_cand_map = {}
 
             t_block = time.time()
             for row in batch_s1.iter_rows(named=True):
                 s1_id = row["entity_id"]
-                s1_name = row["business_name"]
-                s1_addr = row["business_address"]
-                c_results = blocker.retrieve_candidates(s1_name, s1_addr)
-                cand_ids = [c["cand_id"] for c in c_results]
-                final_candidates[s1_id] = cand_ids
-                s1_cand_map[s1_id] = cand_ids
+                s1_name = row["business_name"] or ""
+                s1_addr = row["business_address"] or ""
+                candidates, attribution = blocker.get_candidates(
+                    name=s1_name,
+                    addr=s1_addr,
+                    max_total_candidates=100
+                )
+                cand_list = list(candidates)
+                final_candidates[s1_id] = cand_list
 
-                if not cand_ids:
+                if not cand_list:
                     final_matches[s1_id] = []
                     continue
 
-                for c in c_results:
-                    cand_rec = blocker.get_candidate_record(c["cand_id"])
-                    if cand_rec is None:
-                        continue
+                for cid in cand_list:
+                    cand_name, cand_addr = blocker.raw_store.get(cid, ("", ""))
+                    exact_core = 1 if cid in attribution.get("exact_core", set()) else 0
+                    compact_name = 1 if cid in attribution.get("compact_name", set()) else 0
+                    rare_name = 1 if cid in attribution.get("rare_name_tokens", set()) else 0
+                    exact_addr = 1 if cid in attribution.get("exact_address", set()) else 0
+                    rare_addr = 1 if cid in attribution.get("rare_address_tokens", set()) else 0
+                    n_agree = sum(1 for b in attribution if cid in attribution[b])
+
                     batch_pair_rows.append({
                         "s1_id": s1_id,
                         "s1_name": s1_name,
                         "s1_address": s1_addr,
-                        "cand_id": c["cand_id"],
-                        "cand_name": cand_rec["name"],
-                        "cand_address": cand_rec["address"],
-                        "is_exact_core": c["is_exact_core"],
-                        "is_compact_name": c["is_compact_name"],
-                        "is_rare_name": c["is_rare_name"],
-                        "is_exact_addr": c["is_exact_addr"],
-                        "is_rare_addr": c["is_rare_addr"],
-                        "blocker_agreement_count": c["agreement_count"],
+                        "cand_id": cid,
+                        "cand_name": cand_name,
+                        "cand_address": cand_addr,
+                        "is_exact_core": exact_core,
+                        "is_compact_name": compact_name,
+                        "is_rare_name": rare_name,
+                        "is_exact_addr": exact_addr,
+                        "is_rare_addr": rare_addr,
+                        "blocker_agreement_count": n_agree,
                         "label": 0  # Dummy for inference
                     })
 
