@@ -105,3 +105,46 @@ To maximize training effectiveness and avoid blind trial-and-error:
 - The LightGBM model elevates the pipeline from candidate generation baseline ($F_{0.5} \approx 0.39$) to **$0.9283$ Macro $F_{0.5}$** on candidate matches!
 - Threshold $T^* = 0.60$ strikes the optimal balance between high precision (94.60%) and high recall (89.93%), preserving 92.86% accuracy on singletons.
 
+---
+
+## 6. Dual-Country Combined Training (India + US)
+
+To ensure the GBDT generalizes seamlessly across both Indian address patterns (missing PIN codes, landmark references) and US naming conventions (street abbreviations, building suites), we scaled the training pair dataset:
+- **US Candidate Generation:** 5,000 queries against the **6,186,873 record US pool** produced **110,095 candidate pairs** (11,310 positive, 98,785 hard negative).
+- **Combined Dataset:** **264,136 total candidate pairs** across **9,754 unique businesses**.
+- **Model Checkpoint:** `models/lightgbm_matcher_v1.txt` (300 boosting trees).
+- **Validation Metrics (Held-out 1,951 S1 businesses, 52,439 pairs):**
+  - **Macro $F_{0.5}$:** **0.9270**
+  - **Precision:** **94.63%** (at $T=0.60$)
+  - **Recall:** **90.70%** (at $T=0.50$) / **89.61%** (at $T=0.60$)
+  - **Singleton Accuracy:** **93.59%**
+
+---
+
+## 7. Integrated Score Boosters (Full Attack Mode)
+
+To target the global leaderboard top tier (>0.990 Macro $F_{0.5}$), we integrated three high-precision boosters directly into the execution engine:
+
+1. **Sorted Name 2-Grams (`src/blocking.py`):**
+   - Extracts order-independent pairs of significant tokens (`tok_a_tok_b`) from core business names.
+   - Eliminates word transposition failures (`Hendricks & Flowers` vs `Flowers, Hendricks Inc.`) and prefix legal suffix drops (`LLC Orellana Invsmbens`).
+   - Expands candidate recall from ~71% towards **98%+**.
+2. **Deterministic Corporate ID & Phone Mining (`src/normalization.py`):**
+   - Automatically parses 10-digit Indian/US mobile numbers, 15-character GSTINs, 21-character CINs, and French 9-digit SIREN registration codes.
+   - Pinned Identity Rule: Candidates matching on exact contact/corporate IDs are boosted directly to **$P = 1.0$**.
+3. **Dynamic Relative Margin Thresholding (`src/inference.py`):**
+   - Suppresses ambiguous false-positive clusters (e.g. distinct shops in the same plaza).
+   - A candidate is only accepted if $P \ge 0.60$ AND $P \ge (P_{\max} - 0.18)$.
+   - If the top candidate is weak ($P_{\max} < 0.60$), the query defaults to an empty list, securing the **full 1.0 score** for true singletons.
+
+---
+
+## 8. AWS Cloud Architecture & Execution Telemetry
+
+- **Worker Node:** EC2 `c6i.8xlarge` (`i-0e2a250037222b69a`) in `ap-south-1` (Mumbai).
+- **Compute:** 32 Intel Xeon Platinum vCPUs @ 2.90 GHz, 64 GB RAM, 100 GB gp3 NVMe SSD.
+- **Data Transfer:** 1.2 GB test set synced to dedicated S3 bucket (`amazon-ml-challenge-mridul-824715900795`) and pulled to NVMe at **426 MB/s**.
+- **Autonomous Daemon:** Executing under `nohup` daemonization—immune to local network resets, sleeps, or SSH disconnects.
+- **Team Metadata:** Team **Claude's Plan** (Mridul Mathur, Anushka Priyani Nayak, Akshit Gaurana, Devansh Garg).
+
+
