@@ -169,10 +169,6 @@ def run_inference(
 
             # D. Apply Decision Threshold
             s1_preds = defaultdict(list)
-            for (s1_id, cand_id), prob in zip(zip(batch_pair_rows, preds), preds):
-                # zip correctly
-                pass
-            
             for row_dict, prob in zip(batch_pair_rows, preds):
                 s1_id = row_dict["s1_id"]
                 cand_id = row_dict["cand_id"]
